@@ -1,84 +1,77 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { getCategoria, ALERTAS, ESCENARIOS } from '../data/stations';
 
-function ScoreCard({ label, value, max = 100, sublabel }) {
-  const pct = (value / max) * 100;
-  const color = pct >= 70 ? 'var(--green)' : pct >= 45 ? 'var(--yellow)' : 'var(--red)';
+// ── helpers ────────────────────────────────────────────────────────────────────
+const fmtEur  = n => `€${Number(n).toLocaleString('es-ES')}`;
+const fmtEurK = n => `€${Math.round(n / 1000).toLocaleString('es-ES')}K`;
+const fmtEurM = n => `€${(n / 1e6).toFixed(2)}M`;
+const fmtPct  = n => `${n}%`;
+
+function Row({ label, value, accent }) {
   return (
-    <div className="rounded-xl p-4" style={{ background: 'var(--panel)', border: '1px solid var(--border)' }}>
-      <div className="text-xs uppercase tracking-widest mb-1" style={{ color: 'var(--text-dim)', letterSpacing: '0.1em', fontFamily: 'JetBrains Mono, monospace' }}>
-        {label}
-      </div>
-      <div className="flex items-end justify-between mb-2">
-        <span style={{ fontFamily: 'DM Serif Display, serif', fontSize: '32px', color, lineHeight: 1 }}>{value}</span>
-        <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>/100</span>
-      </div>
-      <div className="w-full h-1.5 rounded-full" style={{ background: 'var(--muted)' }}>
-        <div className="h-1.5 rounded-full transition-all duration-1000" style={{ width: `${pct}%`, background: color }} />
-      </div>
-      {sublabel && <div className="text-xs mt-1.5" style={{ color: 'var(--text-dim)' }}>{sublabel}</div>}
+    <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: 'var(--border-soft)' }}>
+      <span style={{ fontSize: '12px', color: 'var(--text-sub)' }}>{label}</span>
+      <span style={{ fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, color: accent || 'var(--text-head)' }}>{value}</span>
     </div>
   );
 }
 
-function KpiCard({ label, value, delta, accent }) {
+function LayerCard({ num, title, tag, tagColor, children, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const tagColors = {
+    pending:  { bg: '#FEF3C7', text: '#92400E' },
+    ine:      { bg: '#EFF6FF', text: '#1D4ED8' },
+    google:   { bg: '#F0FDF4', text: '#166534' },
+    catastro: { bg: '#F5F3FF', text: '#5B21B6' },
+    kido:     { bg: '#FFF7ED', text: '#9A3412' },
+    maps:     { bg: '#FFF1F2', text: '#9F1239' },
+  };
+  const tc = tagColors[tagColor] || tagColors.ine;
   return (
-    <div className="rounded-xl p-4" style={{ background: 'var(--panel)', border: '1px solid var(--border)' }}>
-      <div className="text-xs uppercase tracking-widest mb-2" style={{ color: 'var(--text-dim)', letterSpacing: '0.1em', fontFamily: 'JetBrains Mono, monospace' }}>{label}</div>
-      <div style={{ fontFamily: 'DM Serif Display, serif', fontSize: '28px', color: accent || 'var(--text-bright)', lineHeight: 1 }}>{value}</div>
-      {delta && <div className="text-xs mt-1" style={{ color: 'var(--text-dim)' }}>{delta}</div>}
+    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)', background: 'var(--surface)' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-5 py-4 transition-colors hover:bg-gray-50"
+      >
+        <div className="flex items-center gap-3">
+          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', color: 'var(--text-dim)', minWidth: '52px' }}>
+            CAPA {String(num).padStart(2, '0')}
+          </span>
+          <span style={{ fontFamily: 'DM Serif Display, serif', fontSize: '16px', color: 'var(--text-head)' }}>{title}</span>
+          <span className="px-2 py-0.5 rounded text-xs" style={{ background: tc.bg, color: tc.text, fontSize: '10px', fontFamily: 'JetBrains Mono, monospace' }}>
+            {tag}
+          </span>
+        </div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--text-dim)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+          <path d="M6 9l6 6 6-6"/>
+        </svg>
+      </button>
+      {open && (
+        <div className="px-5 pb-5 border-t" style={{ borderColor: 'var(--border-soft)' }}>
+          <div className="pt-4">{children}</div>
+        </div>
+      )}
     </div>
   );
 }
 
-function RadarChart({ scores }) {
-  const axes = [
-    { key: 'defensa_combustible', label: 'Fuel' },
-    { key: 'potencial_ev', label: 'EV Hub' },
-    { key: 'conveniencia_retail', label: 'Retail' },
-    { key: 'flota_comercial', label: 'Flota' },
-    { key: 'opcionalidad_inmobiliaria', label: 'Inm.' },
-    { key: 'fortaleza_competitiva', label: 'Moat' },
-  ];
-  const n = axes.length;
-  const CX = 120, CY = 120, R = 90;
-  const angle = i => (Math.PI * 2 * i / n) - Math.PI / 2;
-
-  const rings = [0.25, 0.5, 0.75, 1];
-  const ringPoints = rings.map(r =>
-    axes.map((_, i) => [CX + Math.cos(angle(i)) * R * r, CY + Math.sin(angle(i)) * R * r])
-  );
-
-  const dataPoints = axes.map((ax, i) => {
-    const val = (scores[ax.key] || 0) / 100;
-    return [CX + Math.cos(angle(i)) * R * val, CY + Math.sin(angle(i)) * R * val];
-  });
-
+function BarChart({ data, colorFn }) {
+  const max = Math.max(...data.map(d => d.value), 1);
   return (
-    <svg width="240" height="240" viewBox="0 0 240 240">
-      {/* Rings */}
-      {ringPoints.map((pts, ri) => (
-        <polygon key={ri} points={pts.map(p => p.join(',')).join(' ')} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
+    <div className="flex flex-col gap-1.5 mt-2">
+      {data.map(({ label, value, suffix = '' }) => (
+        <div key={label} className="flex items-center gap-2">
+          <span className="text-right shrink-0" style={{ fontSize: '11px', color: 'var(--text-sub)', width: '120px' }}>{label}</span>
+          <div className="flex-1 h-5 rounded overflow-hidden" style={{ background: 'var(--bg)' }}>
+            <div className="h-5 rounded transition-all duration-700 flex items-center pl-2" style={{ width: `${(value / max) * 100}%`, background: colorFn ? colorFn(value) : 'var(--accent)', minWidth: '2px' }}>
+              <span style={{ fontSize: '10px', color: 'white', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap', fontWeight: 600 }}>
+                {value}{suffix}
+              </span>
+            </div>
+          </div>
+        </div>
       ))}
-      {/* Axes */}
-      {axes.map((_, i) => (
-        <line key={i} x1={CX} y1={CY} x2={CX + Math.cos(angle(i)) * R} y2={CY + Math.sin(angle(i)) * R} stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
-      ))}
-      {/* Data polygon */}
-      <polygon points={dataPoints.map(p => p.join(',')).join(' ')} fill="rgba(192,0,26,0.2)" stroke="#C0001A" strokeWidth="2" />
-      {/* Data dots */}
-      {dataPoints.map(([x, y], i) => <circle key={i} cx={x} cy={y} r="3" fill="#C0001A" />)}
-      {/* Labels */}
-      {axes.map((ax, i) => {
-        const lx = CX + Math.cos(angle(i)) * (R + 16);
-        const ly = CY + Math.sin(angle(i)) * (R + 16);
-        return (
-          <text key={i} x={lx} y={ly} textAnchor="middle" dominantBaseline="middle" fill="rgba(255,255,255,0.5)" fontSize="9" fontFamily="JetBrains Mono, monospace">
-            {ax.label}
-          </text>
-        );
-      })}
-    </svg>
+    </div>
   );
 }
 
@@ -86,276 +79,416 @@ function ScenarioPanel({ stationId }) {
   const scenarios = ESCENARIOS[stationId];
   const [active, setActive] = useState(scenarios ? scenarios.findIndex(s => s.tag === 'Recomendado') : 0);
   if (!scenarios) return (
-    <div className="rounded-xl p-4 text-sm" style={{ background: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text-dim)' }}>
-      Escenarios disponibles en la versión completa del piloto.
-    </div>
+    <p style={{ fontSize: '13px', color: 'var(--text-sub)', fontStyle: 'italic' }}>
+      Simulador de escenarios disponible en la versión completa del piloto.
+    </p>
   );
-
-  const sc = scenarios[active];
-  const fmtEur = n => n ? `€${Math.round(n / 1000)}K` : '€0';
-  const prioColor = { alta: 'var(--green)', media: 'var(--yellow)', baja: 'var(--text-dim)', no: 'var(--red)' };
-
+  const sc = scenarios[active < 0 ? 0 : active];
+  const prioColor = { alta: '#059669', media: '#D97706', baja: '#9CA3AF', no: '#DC2626' };
   return (
-    <div className="grid gap-3" style={{ gridTemplateColumns: '1fr 1.4fr' }}>
+    <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 1.2fr' }}>
       <div className="flex flex-col gap-1.5">
         {scenarios.map((s, i) => (
-          <button
-            key={i}
-            onClick={() => setActive(i)}
-            className="text-left px-3 py-2.5 rounded-lg transition-all"
-            style={{
-              background: i === active ? 'rgba(192,0,26,0.12)' : 'var(--panel)',
-              border: `1px solid ${i === active ? 'rgba(192,0,26,0.4)' : 'var(--border)'}`,
-            }}
-          >
+          <button key={i} onClick={() => setActive(i)}
+            className="text-left px-4 py-3 rounded-xl transition-all"
+            style={{ background: i === active ? '#FFF1F2' : 'var(--bg)', border: `1px solid ${i === active ? 'rgba(192,0,26,0.3)' : 'var(--border)'}` }}>
             <div className="flex items-center justify-between gap-2">
               <div>
-                <div className="text-xs font-medium" style={{ color: 'var(--text-base)' }}>{s.nombre}</div>
-                <div className="text-xs mt-0.5" style={{ color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace' }}>{s.tag}</div>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-head)' }}>{s.nombre}</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', marginTop: '2px' }}>{s.tag}</div>
               </div>
               <div className="text-right shrink-0">
-                <div className="text-xs font-mono" style={{ color: 'var(--text-base)', fontFamily: 'JetBrains Mono, monospace' }}>{fmtEur(s.capex)}</div>
+                <div style={{ fontSize: '12px', fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-head)' }}>{s.capex ? fmtEurK(s.capex) : '€0'}</div>
                 <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: prioColor[s.prioridad], marginLeft: 'auto', marginTop: '4px' }} />
               </div>
             </div>
           </button>
         ))}
       </div>
-
-      <div className="rounded-xl p-4" style={{ background: 'var(--panel)', border: '1px solid var(--border)' }}>
-        <div style={{ fontFamily: 'DM Serif Display, serif', fontSize: '16px', color: 'var(--text-bright)', marginBottom: '12px' }}>{sc.nombre}</div>
-        <div className="grid grid-cols-2 gap-2 mb-3">
+      <div className="rounded-xl p-4" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+        <div style={{ fontFamily: 'DM Serif Display, serif', fontSize: '16px', color: 'var(--text-head)', marginBottom: '14px' }}>{sc.nombre}</div>
+        <div className="grid grid-cols-2 gap-2 mb-4">
           {[
-            { l: 'CAPEX', v: fmtEur(sc.capex), c: 'var(--text-bright)' },
-            { l: 'EBITDA Δ/año', v: sc.ebitda ? `+${fmtEur(sc.ebitda)}` : '€0', c: 'var(--green)' },
-            { l: 'Payback', v: sc.payback, c: 'var(--text-bright)' },
+            { l: 'CAPEX', v: sc.capex ? fmtEurK(sc.capex) : '€0', c: 'var(--text-head)' },
+            { l: 'EBITDA Δ/año', v: sc.ebitda ? `+${fmtEurK(sc.ebitda)}` : '€0', c: 'var(--green)' },
+            { l: 'Payback', v: sc.payback, c: 'var(--text-head)' },
             { l: 'Prioridad', v: sc.prioridad.charAt(0).toUpperCase() + sc.prioridad.slice(1), c: prioColor[sc.prioridad] },
           ].map(({ l, v, c }) => (
-            <div key={l} className="rounded-lg p-2.5" style={{ background: 'rgba(255,255,255,0.03)' }}>
-              <div className="text-xs uppercase" style={{ color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', letterSpacing: '0.08em' }}>{l}</div>
-              <div style={{ fontFamily: 'DM Serif Display, serif', fontSize: '18px', color: c, marginTop: '2px', lineHeight: 1 }}>{v}</div>
+            <div key={l} className="rounded-lg p-3" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: '9px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{l}</div>
+              <div style={{ fontFamily: 'DM Serif Display, serif', fontSize: '20px', color: c, marginTop: '2px' }}>{v}</div>
             </div>
           ))}
         </div>
-        <p className="text-xs leading-relaxed" style={{ color: 'var(--text-dim)' }}>{sc.racional}</p>
+        <p style={{ fontSize: '12px', color: 'var(--text-sub)', lineHeight: 1.6 }}>{sc.racional}</p>
       </div>
     </div>
   );
 }
 
-export default function StationDetail({ station, onBack }) {
+// ── Main Component ─────────────────────────────────────────────────────────────
+export default function StationDetail({ station }) {
   if (!station) return null;
-
   const cat = getCategoria(station.imp);
   const alerts = ALERTAS.filter(a => a.estacion_id === station.id);
-  const alertColors = { critica: 'var(--red)', oportunidad: 'var(--green)', atencion: 'var(--yellow)' };
-  const alertBg = { critica: 'var(--red-soft)', oportunidad: 'var(--green-soft)', atencion: 'var(--yellow-soft)' };
-  const alertBorder = { critica: 'rgba(239,68,68,0.3)', oportunidad: 'rgba(16,185,129,0.3)', atencion: 'rgba(245,158,11,0.3)' };
-
-  const scoreLabels = {
-    defensa_combustible: 'Defensa Combustible',
-    potencial_ev: 'Potencial EV Hub',
-    conveniencia_retail: 'Convenience Retail',
-    flota_comercial: 'Flota & Comercial',
-    opcionalidad_inmobiliaria: 'Opcionalidad Inm.',
-    fortaleza_competitiva: 'Fortaleza Competitiva',
+  const { c1, c2, c3, c4, c5, c6 } = {
+    c1: station.capas.c1_interno,
+    c2: station.capas.c2_demanda,
+    c3: station.capas.c3_competencia,
+    c4: station.capas.c4_activo,
+    c5: station.capas.c5_kido,
+    c6: station.capas.c6_reputacion,
   };
-
-  const catColorHex = cat.color === 'green' ? 'var(--green)' : cat.color === 'yellow' ? 'var(--yellow)' : 'var(--red)';
-  const fmtEur = n => `€${(n / 1000).toFixed(0)}K`;
+  const catHex = cat.hex;
+  const alertStyle = { critica: ['#FEF2F2','#FCA5A5','#991B1B'], oportunidad: ['#F0FDF4','#6EE7B7','#065F46'], atencion: ['#FFFBEB','#FCD34D','#92400E'] };
 
   return (
-    <div className="h-full overflow-y-auto fade-up" style={{ background: 'var(--ink)' }}>
-      <div className="max-w-6xl mx-auto px-6 py-5">
+    <div className="h-full overflow-y-auto" style={{ background: 'var(--bg)' }}>
+      <div style={{ maxWidth: '960px', margin: '0 auto', padding: '28px 28px 48px' }}>
 
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4 mb-5">
+        {/* ── HEADER ── */}
+        <div className="flex items-start justify-between gap-6 mb-6 pb-6 border-b" style={{ borderColor: 'var(--border)' }}>
           <div>
-            <div className="flex items-center gap-3 mb-2">
-              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', color: 'var(--text-dim)' }}>{station.id}</span>
-              <span className="px-2 py-0.5 rounded-full text-xs border" style={{ color: catColorHex, borderColor: catColorHex + '50', background: catColorHex + '15', fontSize: '11px' }}>
-                {cat.label}
-              </span>
-              <span className="px-2 py-0.5 rounded text-xs" style={{ background: 'var(--panel)', color: 'var(--text-dim)', border: '1px solid var(--border)', fontFamily: 'JetBrains Mono, monospace', fontSize: '10px' }}>
-                {station.marca}
-              </span>
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', color: 'var(--text-dim)', background: 'var(--bg)', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: '4px' }}>{station.id}</span>
+              <span className="px-2.5 py-0.5 rounded-full text-xs border font-medium" style={{ color: catHex, borderColor: catHex + '60', background: catHex + '12' }}>{cat.label}</span>
+              <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>{station.marca}</span>
             </div>
-            <h1 style={{ fontFamily: 'DM Serif Display, serif', fontSize: '28px', color: 'var(--text-bright)', lineHeight: 1.1, marginBottom: '4px' }}>
-              {station.nombre}
-            </h1>
-            <p style={{ color: 'var(--text-dim)', fontSize: '13px' }}>{station.direccion}</p>
+            <h1 style={{ fontFamily: 'DM Serif Display, serif', fontSize: '26px', color: 'var(--text-head)', marginBottom: '4px' }}>{station.nombre}</h1>
+            <p style={{ fontSize: '13px', color: 'var(--text-sub)' }}>{station.direccion}</p>
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              {station.servicios.map(s => (
+                <span key={s} className="px-2 py-0.5 rounded text-xs" style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-sub)', fontSize: '11px' }}>{s}</span>
+              ))}
+            </div>
           </div>
-
           <div className="text-right shrink-0">
-            <div style={{ fontFamily: 'DM Serif Display, serif', fontSize: '52px', color: catColorHex, lineHeight: 1 }}>{station.imp}</div>
-            <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace' }}>IMP / 100</div>
+            <div style={{ fontFamily: 'DM Serif Display, serif', fontSize: '56px', color: catHex, lineHeight: 1 }}>{station.imp}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace' }}>IMP · Índice Maestro</div>
           </div>
         </div>
 
-        {/* KPI Row */}
-        <div className="grid gap-3 mb-5" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-          <KpiCard label="CAPEX Recomendado" value={fmtEur(station.kpi.capex_recomendado_eur)} delta={`Prioridad ${station.kpi.prioridad}`} />
-          <KpiCard label="EBITDA Uplift / Año" value={`+${fmtEur(station.kpi.ebitda_uplift_eur_year)}`} delta="est. a partir año 2" accent="var(--green)" />
-          <KpiCard label="Payback Estimado" value={`${station.kpi.payback_anos}a`} delta="sobre capex total" />
-          <KpiCard label="Footfall Diario" value={station.kpi.footfall_diario.toLocaleString('es-ES')} delta={`${station.kpi.dwell_time_min} min dwell pot.`} />
-        </div>
-
-        {/* Two columns: radar + scores */}
-        <div className="grid gap-4 mb-5" style={{ gridTemplateColumns: '220px 1fr' }}>
-          {/* Radar */}
-          <div className="rounded-xl p-4 flex flex-col items-center" style={{ background: 'var(--panel)', border: '1px solid var(--border)' }}>
-            <div className="text-xs uppercase tracking-widest mb-3" style={{ color: 'var(--text-dim)', letterSpacing: '0.1em', fontFamily: 'JetBrains Mono, monospace' }}>
-              Perfil Estratégico
+        {/* ── KPI STRIP ── */}
+        <div className="grid gap-3 mb-6" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+          {[
+            { l: 'CAPEX Recomendado', v: fmtEurK(station.kpi.capex_recomendado_eur), d: `Prioridad ${station.kpi.prioridad}`, c: 'var(--text-head)' },
+            { l: 'EBITDA Uplift / Año', v: `+${fmtEurK(station.kpi.ebitda_uplift_eur_year)}`, d: 'est. a partir año 2', c: 'var(--green)' },
+            { l: 'Payback Estimado', v: `${station.kpi.payback_anos}a`, d: 'sobre capex total', c: 'var(--text-head)' },
+            { l: 'Footfall Diario', v: station.kpi.footfall_diario.toLocaleString('es-ES'), d: `${station.kpi.dwell_time_min} min dwell potencial`, c: 'var(--text-head)' },
+          ].map(({ l, v, d, c }) => (
+            <div key={l} className="rounded-xl p-4" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' }}>{l}</div>
+              <div style={{ fontFamily: 'DM Serif Display, serif', fontSize: '26px', color: c, lineHeight: 1 }}>{v}</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px' }}>{d}</div>
             </div>
-            <RadarChart scores={station.scores} />
-          </div>
+          ))}
+        </div>
 
-          {/* Score cards */}
-          <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-            {Object.entries(station.scores).map(([key, value]) => (
-              <ScoreCard key={key} label={scoreLabels[key]} value={value} />
-            ))}
+        {/* ── ALERTS ── */}
+        {alerts.length > 0 && (
+          <div className="flex flex-col gap-2 mb-6">
+            {alerts.map(a => {
+              const [bg, border, text] = alertStyle[a.tipo];
+              return (
+                <div key={a.id} className="flex items-start gap-3 px-4 py-3 rounded-xl" style={{ background: bg, border: `1px solid ${border}` }}>
+                  <span style={{ fontSize: '13px', color: text, marginTop: '1px' }}>{a.tipo === 'critica' ? '⚠' : a.tipo === 'oportunidad' ? '★' : '●'}</span>
+                  <div>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: text }}>{a.titulo}</span>
+                    <span style={{ fontSize: '12px', color: text, opacity: 0.8, marginLeft: '8px' }}>{a.descripcion}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════
+            6 CAPAS
+        ══════════════════════════════════════════════════════ */}
+        <div className="mb-2">
+          <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '12px' }}>
+            Inteligencia Territorial — 6 Capas de Datos
           </div>
         </div>
 
-        {/* Market data + Alerts */}
-        <div className="grid gap-4 mb-5" style={{ gridTemplateColumns: '1fr 1fr' }}>
+        <div className="flex flex-col gap-3 mb-6">
 
-          {/* Market intel */}
-          <div className="rounded-xl p-4" style={{ background: 'var(--panel)', border: '1px solid var(--border)' }}>
-            <div className="text-xs uppercase tracking-widest mb-3" style={{ color: 'var(--text-dim)', letterSpacing: '0.1em', fontFamily: 'JetBrains Mono, monospace' }}>
-              Datos de Mercado
+          {/* CAPA 01 — Datos internos */}
+          <LayerCard num={1} title="Datos internos del negocio" tag="Operador" tagColor="pending" defaultOpen={true}>
+            {c1.estado === 'estimado' && (
+              <div className="mb-3 px-3 py-2 rounded-lg flex items-center gap-2" style={{ background: '#FFFBEB', border: '1px solid #FCD34D' }}>
+                <span style={{ fontSize: '12px', color: '#92400E' }}>⚠</span>
+                <span style={{ fontSize: '11px', color: '#92400E' }}>{c1.nota}</span>
+              </div>
+            )}
+            <div className="grid gap-6" style={{ gridTemplateColumns: '1fr 1fr' }}>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>P&L Resumen</div>
+                <Row label="Facturación anual" value={fmtEurM(c1.facturacion_anual_eur)} />
+                <Row label="EBITDA" value={fmtEurK(c1.ebitda_eur)} accent="var(--green)" />
+                <Row label="Margen EBITDA" value={fmtPct(c1.ebitda_margen_pct)} />
+                <Row label="Volumen combustible/año" value={`${(c1.litros_ano / 1e6).toFixed(2)} M litros`} />
+                <Row label="Margen combustible €/litro" value={`€${c1.margen_combustible_eur_litro.toFixed(3)}`} />
+                <Row label="% tarjetas flota" value={fmtPct(c1.flota_cards_pct)} />
+              </div>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Mix de Ingresos</div>
+                <BarChart
+                  data={Object.entries(c1.ingresos_pct).map(([k, v]) => ({ label: k.charAt(0).toUpperCase() + k.slice(1), value: v, suffix: '%' }))}
+                  colorFn={v => v > 60 ? '#1D4ED8' : v > 15 ? '#059669' : '#D97706'}
+                />
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <Row label="Conversión tienda" value={fmtPct(c1.conversion_tienda_pct)} />
+                  <Row label="Ticket medio tienda" value={`€${c1.ticket_medio_tienda_eur}`} />
+                </div>
+              </div>
             </div>
-            <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 1fr' }}>
-              {[
-                { l: 'Población 1km', v: station.mercado.poblacion_1km.toLocaleString('es-ES') },
-                { l: 'Renta Media', v: `€${station.mercado.renta_media_eur.toLocaleString('es-ES')}` },
-                { l: 'Penetración BEV', v: `${station.mercado.vehiculos_bev_pct}%` },
-                { l: 'Competencia Fuel 1km', v: `${station.mercado.competencia_fuel_1km} EESS` },
-                { l: 'Cargadores EV 1km', v: `${station.mercado.cargadores_ev_1km} pts.` },
-                { l: 'Ratio EV/Cargador', v: `×${station.mercado.ratio_ev_cargador}` },
-                { l: 'Rating Google', v: `★ ${station.mercado.rating_google}` },
-                { l: 'Índice Reputación', v: `${station.mercado.reputacion_index}/100` },
-              ].map(({ l, v }) => (
-                <div key={l} className="py-1.5 border-b flex justify-between" style={{ borderColor: 'var(--border)' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>{l}</span>
-                  <span style={{ fontSize: '12px', color: 'var(--text-bright)', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>{v}</span>
+          </LayerCard>
+
+          {/* CAPA 02 — Demanda territorial */}
+          <LayerCard num={2} title="Demanda territorial" tag="INE · DGT" tagColor="ine">
+            <div className="grid gap-6" style={{ gridTemplateColumns: '1fr 1fr' }}>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Catchment 1 km</div>
+                <Row label="Población" value={c2.poblacion_1km.toLocaleString('es-ES')} />
+                <Row label="Hogares" value={c2.hogares_1km.toLocaleString('es-ES')} />
+                <Row label="Edad media" value={`${c2.edad_media} años`} />
+                <Row label="Renta media hogar" value={fmtEur(c2.renta_media_eur)} />
+                <Row label="Vehículos por hogar" value={c2.vehiculos_hogar} />
+                <Row label="% sin garaje" value={fmtPct(c2.pct_sin_garaje)} accent={c2.pct_sin_garaje > 55 ? 'var(--green)' : undefined} />
+              </div>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Parque Vehicular</div>
+                <BarChart
+                  data={[
+                    { label: '% BEV', value: c2.pct_bev, suffix: '%' },
+                    { label: '% Diésel', value: c2.pct_diesel, suffix: '%' },
+                    { label: '% Comerciales', value: c2.pct_comerciales, suffix: '%' },
+                  ]}
+                  colorFn={(v, i) => ['#059669', '#D97706', '#2563EB'][0]}
+                />
+                <div className="mt-3">
+                  <Row label="Antigüedad media parque" value={`${c2.antiguedad_media_anos} años`} />
+                  <Row label="% vivienda en bloque" value={fmtPct(c2.pct_vivienda_bloque)} />
+                </div>
+                <div className="mt-2" style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace' }}>{c2.fuente}</div>
+              </div>
+            </div>
+          </LayerCard>
+
+          {/* CAPA 03 — Mapa competitivo */}
+          <LayerCard num={3} title="Mapa competitivo" tag="Google Places" tagColor="google">
+            <div className="grid gap-6" style={{ gridTemplateColumns: '1fr 1fr' }}>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Competencia Combustible</div>
+                <Row label="EESS en 1 km" value={`${c3.fuel_1km} (${c3.fuel_lowcost} low-cost)`} />
+                <Row label="Más cercano" value={`${c3.competidor_mas_cercano} (${c3.competidor_mas_cercano_m}m)`} />
+                <Row label="G95 media competencia" value={`€${c3.g95_media_competencia.toFixed(3)}`} />
+                <Row label="Gap precio vs. mínimo" value={`${c3.gap_precio_minimo > 0 ? '+' : ''}€${c3.gap_precio_minimo.toFixed(3)}`} accent={c3.gap_precio_minimo > 0 ? 'var(--yellow)' : 'var(--green)'} />
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', marginTop: '16px', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Infraestructura EV</div>
+                <Row label="Cargadores totales (1 km)" value={c3.ev_total_1km} />
+                <Row label="HPC ≥ 150 kW" value={c3.ev_hpc_150kw} />
+                <Row label="Rápidos 50-150 kW" value={c3.ev_fast_50kw} />
+                <Row label="Ratio EV / cargador" value={`×${c3.ratio_ev_cargador}`} accent={c3.ratio_ev_cargador > 100 ? 'var(--accent)' : undefined} />
+                <Row label="Gap HPC" value={c3.hpc_gap} />
+                <Row label="Utilización media EV" value={fmtPct(c3.utilizacion_ev_pct)} />
+              </div>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>POIs en 1 km</div>
+                <BarChart
+                  data={[
+                    { label: 'Supermercados', value: c3.poi.supermercados },
+                    { label: 'Cafés / QSR', value: c3.poi.cafes_qsr },
+                    { label: 'Restaurantes', value: c3.poi.restaurantes },
+                    { label: 'Hoteles', value: c3.poi.hoteles },
+                    { label: 'Lockers', value: c3.poi.lockers },
+                  ]}
+                  colorFn={() => '#2563EB'}
+                />
+                <div className="mt-3">
+                  <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px' }}>Operadores EV</div>
+                  <div className="flex flex-wrap gap-1">
+                    {c3.operadores_ev.map(op => (
+                      <span key={op} className="px-2 py-0.5 rounded text-xs" style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', fontSize: '11px' }}>{op}</span>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-2" style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace' }}>{c3.fuente}</div>
+              </div>
+            </div>
+          </LayerCard>
+
+          {/* CAPA 04 — Activo y opcionalidad */}
+          <LayerCard num={4} title="Activo y opcionalidad" tag="Catastro · Idealista" tagColor="catastro">
+            <div className="grid gap-6" style={{ gridTemplateColumns: '1fr 1fr' }}>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Infraestructura Física</div>
+                <Row label="Superficie total" value={`${c4.superficie_m2.toLocaleString('es-ES')} m²`} />
+                <Row label="Islas / Surtidores" value={`${c4.islas} / ${c4.surtidores}`} />
+                <Row label="Tienda" value={`${c4.tienda_m2} m²`} />
+                <Row label="Parking" value={`${c4.parking} plazas`} />
+                <Row label="Potencia actual" value={`${c4.potencia_kva} kVA`} />
+                <Row label="Potencia expandible" value={`${c4.potencia_expandible_kva} kVA`} accent="var(--green)" />
+                <Row label="Coste acometida est." value={fmtEurK(c4.coste_acometida_eur)} />
+                <Row label="Capacidad expansión" value={c4.capacidad_expansion} />
+              </div>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Valor del Activo</div>
+                <Row label="Valor suelo €/m²" value={fmtEur(c4.valor_suelo_eur_m2)} />
+                <Row label="Valor suelo total" value={fmtEurM(c4.valor_suelo_total_eur)} />
+                <Row label="Valor operativo est." value={fmtEurM(c4.valor_operativo_eur)} />
+                <Row label="Ratio suelo / operativo" value={`×${c4.ratio_suelo_operativo}`} accent={c4.ratio_suelo_operativo > 1.5 ? 'var(--accent)' : undefined} />
+                <Row label="Score opcionalidad" value={`${c4.score_opcionalidad}/100`} accent={c4.score_opcionalidad > 60 ? 'var(--green)' : undefined} />
+                <Row label="Renta retail €/m²/mes" value={`€${c4.renta_retail_eur_m2_mes}`} />
+                <div className="mt-2" style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace' }}>{c4.fuente}</div>
+              </div>
+            </div>
+          </LayerCard>
+
+          {/* CAPA 05 — Movilidad real */}
+          <LayerCard num={5} title="Movilidad real" tag="Kido (sim.)" tagColor="kido">
+            <div className="grid gap-6" style={{ gridTemplateColumns: '1fr 1fr' }}>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Footfall y Comportamiento</div>
+                <Row label="Footfall diario estimado" value={c5.footfall_diario.toLocaleString('es-ES')} />
+                <Row label="Dwell time potencial" value={`${c5.dwell_time_min} min`} />
+                <Row label="Índice de fidelidad" value={c5.indice_fidelidad.toFixed(2)} />
+                <Row label="Ratio real / censo" value={`×${c5.ratio_real_censo}`} />
+                <Row label="Perfil dominante" value={c5.perfil_dominante} />
+                {c5.pct_vehiculo_pesado && <Row label="% vehículo pesado" value={fmtPct(c5.pct_vehiculo_pesado)} />}
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '8px', lineHeight: 1.5 }}>
+                  <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px' }}>Método: </span>{c5.metodo}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Perfil de Visitantes (%)</div>
+                <BarChart
+                  data={Object.entries(c5.perfil_pct).map(([k, v]) => ({ label: k.replace(/_/g, ' '), value: v, suffix: '%' }))}
+                  colorFn={() => '#D97706'}
+                />
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', marginTop: '12px', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Patrón semanal</div>
+                <div className="flex gap-3">
+                  {Object.entries(c5.patron_semanal).map(([k, v]) => (
+                    <div key={k} className="flex-1 text-center rounded-lg py-2" style={{ background: 'var(--bg)' }}>
+                      <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace' }}>{k}</div>
+                      <div style={{ fontFamily: 'DM Serif Display, serif', fontSize: '18px', color: 'var(--text-head)' }}>×{v}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </LayerCard>
+
+          {/* CAPA 06 — Reputación */}
+          <LayerCard num={6} title="Reputación de servicio" tag="Google Maps" tagColor="maps">
+            <div className="grid gap-6" style={{ gridTemplateColumns: '1fr 1fr' }}>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Métricas Google Maps</div>
+                <Row label="Rating estación" value={`★ ${c6.rating} (${c6.n_reseñas.toLocaleString('es-ES')})`} accent={c6.rating >= 4.0 ? 'var(--green)' : c6.rating >= 3.7 ? 'var(--yellow)' : 'var(--red)'} />
+                <Row label="Rating competencia" value={`★ ${c6.rating_competencia} (${c6.n_reseñas_competencia.toLocaleString('es-ES')})`} />
+                <Row label="Diferencial" value={c6.diferencial} accent={parseFloat(c6.diferencial) >= 0 ? 'var(--green)' : 'var(--red)'} />
+                <Row label="Índice de reputación" value={`${c6.indice}/100`} accent={c6.indice >= 65 ? 'var(--green)' : c6.indice >= 50 ? 'var(--yellow)' : 'var(--red)'} />
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', marginTop: '16px', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Sentimiento</div>
+                <BarChart
+                  data={[
+                    { label: 'Positivo', value: c6.sentimiento_pct.positivo, suffix: '%' },
+                    { label: 'Neutro', value: c6.sentimiento_pct.neutro, suffix: '%' },
+                    { label: 'Negativo', value: c6.sentimiento_pct.negativo, suffix: '%' },
+                  ]}
+                  colorFn={(_, i) => ['#059669', '#D97706', '#DC2626'][i]}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Temas Recurrentes</div>
+                <div className="mb-3">
+                  <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--green)', marginBottom: '6px' }}>✓ Positivos</div>
+                  {c6.temas_positivos.map(t => (
+                    <div key={t} className="flex items-center gap-2 py-1.5 border-b" style={{ borderColor: 'var(--border-soft)', fontSize: '12px', color: 'var(--text-base)' }}>
+                      <span style={{ color: 'var(--green)' }}>+</span>{t}
+                    </div>
+                  ))}
+                </div>
+                <div className="mb-3">
+                  <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--red)', marginBottom: '6px' }}>✗ Negativos</div>
+                  {c6.temas_negativos.map(t => (
+                    <div key={t} className="flex items-center gap-2 py-1.5 border-b" style={{ borderColor: 'var(--border-soft)', fontSize: '12px', color: 'var(--text-base)' }}>
+                      <span style={{ color: 'var(--red)' }}>−</span>{t}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 p-3 rounded-lg" style={{ background: '#F8F7F4', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Key Insight</div>
+                  <p style={{ fontSize: '12px', color: 'var(--text-base)', lineHeight: 1.6, fontStyle: 'italic' }}>{c6.insight}</p>
+                </div>
+              </div>
+            </div>
+          </LayerCard>
+
+        </div>
+        {/* ══ END CAPAS ══ */}
+
+        {/* ── SCORES + RADAR ── */}
+        <div className="mb-6 rounded-xl p-5" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '16px' }}>
+            Scores Estratégicos · IMP por Dimensión
+          </div>
+          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+            {[
+              { key: 'defensa_combustible', label: 'Defensa Combustible' },
+              { key: 'potencial_ev', label: 'Potencial EV Hub' },
+              { key: 'conveniencia_retail', label: 'Convenience Retail' },
+              { key: 'flota_comercial', label: 'Flota & Comercial' },
+              { key: 'opcionalidad_inmobiliaria', label: 'Opcionalidad Inmobiliaria' },
+              { key: 'fortaleza_competitiva', label: 'Fortaleza Competitiva' },
+            ].map(({ key, label }) => {
+              const val = station.scores[key];
+              const color = val >= 70 ? 'var(--green)' : val >= 45 ? 'var(--yellow)' : 'var(--red)';
+              return (
+                <div key={key} className="rounded-xl p-4" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>{label}</div>
+                  <div style={{ fontFamily: 'DM Serif Display, serif', fontSize: '30px', color, lineHeight: 1, marginBottom: '8px' }}>{val}</div>
+                  <div className="w-full h-1.5 rounded-full" style={{ background: 'var(--muted)' }}>
+                    <div className="h-1.5 rounded-full" style={{ width: `${val}%`, background: color }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ── RECOMENDACIÓN ── */}
+        <div className="mb-6 rounded-xl p-5" style={{ background: '#FFF8F8', border: '1px solid rgba(192,0,26,0.2)' }}>
+          <div style={{ fontSize: '10px', color: 'var(--accent)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '6px' }}>Plan de Acción Recomendado</div>
+          <div style={{ fontFamily: 'DM Serif Display, serif', fontSize: '18px', color: 'var(--text-head)', marginBottom: '10px' }}>{station.recomendacion.arquetipo}</div>
+          <p style={{ fontSize: '13px', color: 'var(--text-sub)', lineHeight: 1.65, marginBottom: '16px' }}>{station.recomendacion.resumen}</p>
+          <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 1fr' }}>
+            <div>
+              <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--yellow)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Riesgos Clave</div>
+              {station.recomendacion.riesgos.map((r, i) => (
+                <div key={i} className="flex items-start gap-2 mb-2">
+                  <span style={{ color: 'var(--yellow)', fontSize: '12px', marginTop: '1px' }}>▲</span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-sub)' }}>{r}</span>
                 </div>
               ))}
             </div>
-
-            {/* Precios */}
-            <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
-              <div className="text-xs uppercase mb-2" style={{ color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', letterSpacing: '0.1em' }}>Precios Actuales</div>
-              <div className="flex gap-3">
-                {[
-                  { l: 'G95', v: station.precios.g95 },
-                  { l: 'G98', v: station.precios.g98 },
-                  { l: 'Diésel', v: station.precios.diesel_a },
-                ].map(({ l, v }) => (
-                  <div key={l} className="flex-1 text-center rounded-lg py-1.5" style={{ background: 'rgba(255,255,255,0.04)' }}>
-                    <div style={{ fontSize: '9px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace' }}>{l}</div>
-                    <div style={{ fontSize: '14px', color: 'var(--text-bright)', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>€{v.toFixed(3)}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Alerts + Reco */}
-          <div className="flex flex-col gap-3">
-            {/* Active alerts */}
-            {alerts.length > 0 && (
-              <div className="rounded-xl p-4" style={{ background: 'var(--panel)', border: '1px solid var(--border)' }}>
-                <div className="text-xs uppercase tracking-widest mb-3" style={{ color: 'var(--text-dim)', letterSpacing: '0.1em', fontFamily: 'JetBrains Mono, monospace' }}>
-                  Alertas Activas
+            <div>
+              <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--red)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>No Hacer</div>
+              {station.recomendacion.no_hacer.map((r, i) => (
+                <div key={i} className="flex items-start gap-2 mb-2">
+                  <span style={{ color: 'var(--red)', fontSize: '12px', marginTop: '1px' }}>✕</span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-sub)' }}>{r}</span>
                 </div>
-                <div className="flex flex-col gap-2">
-                  {alerts.map(a => (
-                    <div key={a.id} className="rounded-lg px-3 py-2.5" style={{ background: alertBg[a.tipo], border: `1px solid ${alertBorder[a.tipo]}` }}>
-                      <div className="flex items-start gap-2">
-                        <span style={{ color: alertColors[a.tipo], fontSize: '12px' }}>{a.tipo === 'critica' ? '⚠' : a.tipo === 'oportunidad' ? '★' : '●'}</span>
-                        <div>
-                          <div className="text-xs font-semibold" style={{ color: 'var(--text-base)' }}>{a.titulo}</div>
-                          <div className="text-xs mt-0.5 leading-relaxed" style={{ color: 'var(--text-dim)' }}>{a.descripcion}</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Recommendation */}
-            <div className="flex-1 rounded-xl p-4" style={{ background: 'rgba(192,0,26,0.06)', border: '1px solid rgba(192,0,26,0.25)' }}>
-              <div className="text-xs uppercase tracking-widest mb-1" style={{ color: 'var(--accent)', letterSpacing: '0.1em', fontFamily: 'JetBrains Mono, monospace' }}>
-                Plan de Acción Recomendado
-              </div>
-              <div style={{ fontFamily: 'DM Serif Display, serif', fontSize: '15px', color: 'var(--text-bright)', marginBottom: '8px' }}>
-                {station.recomendacion.arquetipo}
-              </div>
-              <p className="text-xs leading-relaxed mb-3" style={{ color: 'var(--text-dim)' }}>
-                {station.recomendacion.resumen}
-              </p>
-              <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 1fr' }}>
-                <div>
-                  <div className="text-xs font-semibold mb-1" style={{ color: 'var(--yellow)', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Riesgos Clave</div>
-                  {station.recomendacion.riesgos.map((r, i) => (
-                    <div key={i} className="text-xs mb-1 flex items-start gap-1.5" style={{ color: 'var(--text-dim)' }}>
-                      <span style={{ color: 'var(--yellow)', marginTop: '2px' }}>▲</span>{r}
-                    </div>
-                  ))}
-                </div>
-                <div>
-                  <div className="text-xs font-semibold mb-1" style={{ color: 'var(--red)', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>No Hacer</div>
-                  {station.recomendacion.no_hacer.map((r, i) => (
-                    <div key={i} className="text-xs mb-1 flex items-start gap-1.5" style={{ color: 'var(--text-dim)' }}>
-                      <span style={{ color: 'var(--red)', marginTop: '2px' }}>✕</span>{r}
-                    </div>
-                  ))}
-                </div>
-              </div>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* Scenarios */}
-        <div className="rounded-xl p-4 mb-5" style={{ background: 'var(--panel)', border: '1px solid var(--border)' }}>
-          <div className="text-xs uppercase tracking-widest mb-3" style={{ color: 'var(--text-dim)', letterSpacing: '0.1em', fontFamily: 'JetBrains Mono, monospace' }}>
-            Simulador de Escenarios
+        {/* ── ESCENARIOS ── */}
+        <div className="rounded-xl p-5" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '14px' }}>
+            Simulador de Escenarios de Inversión
           </div>
           <ScenarioPanel stationId={station.id} />
-        </div>
-
-        {/* Asset data */}
-        <div className="rounded-xl p-4" style={{ background: 'var(--panel)', border: '1px solid var(--border)' }}>
-          <div className="text-xs uppercase tracking-widest mb-3" style={{ color: 'var(--text-dim)', letterSpacing: '0.1em', fontFamily: 'JetBrains Mono, monospace' }}>
-            Datos del Activo
-          </div>
-          <div className="grid gap-x-6 gap-y-1" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-            {[
-              { l: 'Superficie', v: `${station.activo.superficie_m2.toLocaleString('es-ES')} m²` },
-              { l: 'Islas', v: station.activo.islas },
-              { l: 'Surtidores', v: station.activo.surtidores },
-              { l: 'Tienda', v: `${station.activo.tienda_m2} m²` },
-              { l: 'Parking', v: `${station.activo.parking} plazas` },
-              { l: 'Potencia actual', v: `${station.activo.potencia_kva} kVA` },
-              { l: 'Potencia expandible', v: `${station.activo.potencia_expandible_kva} kVA` },
-              { l: 'ZBE', v: station.zbe },
-            ].map(({ l, v }) => (
-              <div key={l} className="py-1.5 border-b flex justify-between gap-2" style={{ borderColor: 'var(--border)' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>{l}</span>
-                <span style={{ fontSize: '11px', color: 'var(--text-bright)', fontFamily: 'JetBrains Mono, monospace' }}>{v}</span>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {station.servicios.map(s => (
-              <span key={s} className="px-2 py-0.5 rounded text-xs" style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--text-base)', border: '1px solid var(--border)' }}>
-                {s}
-              </span>
-            ))}
-          </div>
         </div>
 
       </div>
