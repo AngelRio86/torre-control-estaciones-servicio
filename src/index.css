@@ -1,0 +1,67 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: #0A0F1E;
+  --panel: #111827;
+  --border: #1F2937;
+  --muted: #374151;
+  --text-dim: #6B7280;
+  --text-base: #D1D5DB;
+  --text-bright: #F9FAFB;
+  --green: #10B981;
+  --green-soft: rgba(16,185,129,0.12);
+  --yellow: #F59E0B;
+  --yellow-soft: rgba(245,158,11,0.12);
+  --red: #EF4444;
+  --red-soft: rgba(239,68,68,0.12);
+  --accent: #C0001A;
+  --accent-glow: rgba(192,0,26,0.2);
+  --blue: #3B82F6;
+  --blue-soft: rgba(59,130,246,0.12);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; overflow: hidden; }
+body {
+  background: var(--ink);
+  color: var(--text-base);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Leaflet dark overrides */
+.leaflet-container { background: #0d1117 !important; }
+.leaflet-tile-pane { filter: brightness(0.55) saturate(0.6) hue-rotate(200deg); }
+.leaflet-popup-content-wrapper {
+  background: var(--panel) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text-base) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important;
+}
+.leaflet-popup-tip { background: var(--panel) !important; }
+.leaflet-popup-content { margin: 12px 14px !important; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px; }
+
+/* Animations */
+@keyframes pulse-ring {
+  0% { transform: scale(1); opacity: 0.6; }
+  70% { transform: scale(2.2); opacity: 0; }
+  100% { opacity: 0; }
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fade-up 0.35s ease both; }
+
+/* Number tabular */
+.tabular { font-variant-numeric: tabular-nums; }
